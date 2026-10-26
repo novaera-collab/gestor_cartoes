@@ -30,10 +30,10 @@ jobs:
       shell: pwsh
       run: |
         $ctkPath = python -c "import customtkinter, os; print(os.path.dirname(customtkinter.__file__))"
-        pyinstaller --noconfirm --onedir --windowed --add-data "${ctkPath};customtkinter/" app_cartoes.py
+        pyinstaller --noconfirm --onefile --windowed --add-data "${ctkPath};customtkinter/" app_cartoes.py
 
     - name: Upload Executable Artifact
       uses: actions/upload-artifact@v4
       with:
         name: GestorCartoes-Executable
-        path: dist/app_cartoes/
+        path: dist/app_cartoes.exe
