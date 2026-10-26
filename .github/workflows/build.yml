@@ -27,8 +27,10 @@ jobs:
         pip install customtkinter psycopg2-binary pyinstaller
 
     - name: Build EXE with PyInstaller
+      shell: pwsh
       run: |
-        pyinstaller --noconfirm --onedir --windowed --add-data "venv/Lib/site-packages/customtkinter;customtkinter/" app_cartoes.py
+        $ctkPath = python -c "import customtkinter, os; print(os.path.dirname(customtkinter.__file__))"
+        pyinstaller --noconfirm --onedir --windowed --add-data "${ctkPath};customtkinter/" app_cartoes.py
 
     - name: Upload Executable Artifact
       uses: actions/upload-artifact@v4
