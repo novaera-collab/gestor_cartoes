@@ -190,42 +190,69 @@ class LupaEmpresaModal(ctk.CTkToplevel):
     def pesquisar(self):
         for w in self.frame_lista.winfo_children():
             w.destroy()
+            
         termo = self.txt_busca.get().strip()
         schema = get_schema()
+        
         try:
             conn = get_connection()
             cur = conn.cursor()
-            query = "SELECT fco AS codigo, fnu AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fnu ILIKE %s LIMIT 30"
+            
+            if not termo:
+                query_xgeral = "SELECT fco AS codigo, fnu AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
+                query_params = ()
+            else:
+                query_xgeral = "SELECT fco AS codigo, fnu AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fnu ILIKE %s ORDER BY fco LIMIT 50;"
+                query_params = (f"%{termo}%", f"%{termo}%")
+
             try:
-                cur.execute(query, (f"%{termo}%", f"%{termo}%"))
+                cur.execute(query_xgeral, query_params)
                 res = cur.fetchall()
             except Exception:
                 conn.rollback()
-                cur.execute(f"SELECT codigo, nome FROM {schema}.empresa WHERE codigo ILIKE %s OR nome ILIKE %s LIMIT 30", (f"%{termo}%", f"%{termo}%"))
+                if not termo:
+                    cur.execute(f"SELECT codigo, nome FROM {schema}.empresa ORDER BY codigo LIMIT 50;")
+                else:
+                    cur.execute(f"SELECT codigo, nome FROM {schema}.empresa WHERE codigo ILIKE %s OR nome ILIKE %s ORDER BY codigo LIMIT 50;", (f"%{termo}%", f"%{termo}%"))
                 res = cur.fetchall()
+                
             conn.close()
+
+            if not res:
+                ctk.CTkLabel(self.frame_lista, text="Nenhuma empresa encontrada.", text_color="gray").pack(pady=20)
+                return
 
             for emp in res:
                 row = ctk.CTkFrame(self.frame_lista)
                 row.pack(fill="x", pady=2, padx=2)
-                ctk.CTkLabel(row, text=f"[{emp['codigo']}]", font=ctk.CTkFont(weight="bold"), width=60).pack(side="left", padx=5)
-                ctk.CTkLabel(row, text=emp['nome'], anchor="w").pack(side="left", fill="x", expand=True, padx=5)
-                btn_sel = ctk.CTkButton(row, text="✔", width=40, command=lambda e=emp: self.selecionar(e))
+                
+                cod_str = str(emp['codigo']).strip().zfill(4)
+                nome_str = str(emp['nome'] or '').strip()
+                
+                ctk.CTkLabel(row, text=f"[{cod_str}]", font=ctk.CTkFont(weight="bold"), width=60).pack(side="left", padx=5)
+                ctk.CTkLabel(row, text=nome_str, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
+                
+                btn_sel = ctk.CTkButton(row, text="✔", width=40, command=lambda c=cod_str, n=nome_str: self.selecionar(c, n))
                 btn_sel.pack(side="right", padx=5)
+                
         except Exception as err:
-            messagebox.showerror("Erro", f"Erro na consulta de empresas:\n{err}", parent=self)
+            messagebox.showerror("Erro na Consulta", f"Erro ao consultar empresas:\n{err}", parent=self)
 
-    def selecionar(self, emp):
+    def selecionar(self, cod_str, nome_str):
         schema = get_schema()
         try:
             conn = get_connection()
             cur = conn.cursor()
-            cur.execute(f"INSERT INTO {schema}.empresa (codigo, nome) VALUES (%s, %s) ON CONFLICT (codigo) DO UPDATE SET nome = EXCLUDED.nome", (str(emp['codigo']), str(emp['nome'])))
+            cur.execute(
+                f"INSERT INTO {schema}.empresa (codigo, nome) VALUES (%s, %s) ON CONFLICT (codigo) DO UPDATE SET nome = EXCLUDED.nome",
+                (cod_str, nome_str)
+            )
             conn.commit()
             conn.close()
         except Exception:
             pass
-        self.callback(str(emp['codigo']), str(emp['nome']))
+            
+        self.callback(cod_str, nome_str)
         self.destroy()
 
 class LupaFilialModal(ctk.CTkToplevel):
@@ -260,15 +287,29 @@ class LupaFilialModal(ctk.CTkToplevel):
         try:
             conn = get_connection()
             cur = conn.cursor()
-            query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil WHERE CAST(fcodigo AS TEXT) ILIKE %s OR fnome ILIKE %s LIMIT 30"
+            
+            if not termo:
+                query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil ORDER BY fcodigo LIMIT 50"
+                params = ()
+            else:
+                query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil WHERE CAST(fcodigo AS TEXT) ILIKE %s OR fnome ILIKE %s ORDER BY fcodigo LIMIT 50"
+                params = (f"%{termo}%", f"%{termo}%")
+                
             try:
-                cur.execute(query, (f"%{termo}%", f"%{termo}%"))
+                cur.execute(query, params)
                 res = cur.fetchall()
             except Exception:
                 conn.rollback()
-                cur.execute(f"SELECT codigo, nome FROM {schema}.filial WHERE empresa_codigo = %s AND (codigo ILIKE %s OR nome ILIKE %s) LIMIT 30", (self.cod_empresa, f"%{termo}%", f"%{termo}%"))
+                if not termo:
+                    cur.execute(f"SELECT codigo, nome FROM {schema}.filial WHERE empresa_codigo = %s ORDER BY codigo LIMIT 50", (self.cod_empresa,))
+                else:
+                    cur.execute(f"SELECT codigo, nome FROM {schema}.filial WHERE empresa_codigo = %s AND (codigo ILIKE %s OR nome ILIKE %s) ORDER BY codigo LIMIT 50", (self.cod_empresa, f"%{termo}%", f"%{termo}%"))
                 res = cur.fetchall()
             conn.close()
+
+            if not res:
+                ctk.CTkLabel(self.frame_lista, text="Nenhuma filial encontrada.", text_color="gray").pack(pady=20)
+                return
 
             for fil in res:
                 row = ctk.CTkFrame(self.frame_lista)
@@ -329,13 +370,15 @@ class LupaGenericModal(ctk.CTkToplevel):
         try:
             conn = get_connection()
             cur = conn.cursor()
-            query = f"""
-                SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao 
-                FROM {schema_emp}.{self.tabela} 
-                WHERE CAST({self.col_cod} AS TEXT) ILIKE %s OR {self.col_desc} ILIKE %s 
-                LIMIT 40
-            """
-            cur.execute(query, (f"%{termo}%", f"%{termo}%"))
+            
+            if not termo:
+                query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} ORDER BY {self.col_cod} LIMIT 50"
+                params = ()
+            else:
+                query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} WHERE CAST({self.col_cod} AS TEXT) ILIKE %s OR {self.col_desc} ILIKE %s ORDER BY {self.col_cod} LIMIT 50"
+                params = (f"%{termo}%", f"%{termo}%")
+                
+            cur.execute(query, params)
             res = cur.fetchall()
             conn.close()
 
