@@ -321,27 +321,3 @@ class LupaGenericModal(ctk.CTkToplevel):
             if not termo:
                 query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} ORDER BY {self.col_cod} LIMIT 50"
                 params = ()
-            else:
-                query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} WHERE CAST({self.col_cod} AS TEXT) ILIKE %s OR {self.col_desc} ILIKE %s ORDER BY {self.col_cod} LIMIT 50"
-                params = (f"%{termo}%", f"%{termo}%")
-                
-            cur.execute(query, params)
-            res = cur.fetchall()
-            conn.close()
-
-            if not res:
-                ctk.CTkLabel(self.frame_lista, text="Nenhum registro encontrado.", text_color="gray").pack(pady=20)
-                return
-
-            for item in res:
-                row = ctk.CTkFrame(self.frame_lista)
-                row.pack(fill="x", pady=2, padx=2)
-                cod_str = str(item['codigo']).strip()
-                desc_str = str(item['descricao'] or '').strip()
-                
-                ctk.CTkLabel(row, text=f"[{cod_str}]", font=ctk.CTkFont(weight="bold"), width=70).pack(side="left", padx=5)
-                ctk.CTkLabel(row, text=desc_str, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
-                btn_sel = ctk.CTkButton(row, text="✔", width=40, command=lambda c=cod_str, d=desc_str: self.selecionar(c, d))
-                btn_sel.pack(side="right", padx=5)
-        except Exception as err:
-            messagebox.showerror("Erro", f"Erro na consulta de {self.titulo} em {schema_emp}:\n{
