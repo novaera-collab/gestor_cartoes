@@ -387,4 +387,38 @@ class ConfigBancoWindow(ctk.CTkToplevel):
     def gerar_tabelas(self):
         self.salvar()
         try:
-            criar_tabelas_b
+            criar_tabelas_banco()
+            messagebox.showinfo("Sucesso", f"Schema e tabelas gerados/verificados com sucesso no schema '{get_schema()}'!", parent=self)
+        except Exception as e:
+            messagebox.showerror("Erro na Criação", f"Falha ao gerar tabelas:\n{e}", parent=self)
+
+# ==========================================
+# TELA PRINCIPAL E CADASTRO DE TAXAS
+# ==========================================
+
+class AppCartoesPrincipal(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("Gestor de Taxas de Cartões de Crédito")
+        self.geometry("1100x720")
+
+        self.empresa_sel = {"codigo": "", "nome": ""}
+        self.filial_sel = {"codigo": "", "nome": ""}
+        self.conta_sel = {"codigo": "", "nome": ""}
+        self.portador_sel = {"codigo": "", "nome": ""}
+        self.tipo_cobranca_sel = {"codigo": "", "nome": ""}
+        self.itens_parcela = []
+
+        self.criar_layout()
+
+    def criar_layout(self):
+        # BANNER / TOPO
+        frame_top = ctk.CTkFrame(self)
+        frame_top.pack(fill="x", padx=15, pady=10)
+
+        ctk.CTkLabel(frame_top, text="💳 Gestão e Cadastro de Taxas de Cartão", font=ctk.CTkFont(size=18, weight="bold")).pack(side="left", padx=15, pady=10)
+        btn_config = ctk.CTkButton(frame_top, text="⚙️ Conf. Banco", fg_color="#455A64", hover_color="#37474F", command=self.abrir_config)
+        btn_config.pack(side="right", padx=15)
+
+        # PAINEL EMPRESA E FILIAL
+        frame_emp_fil = ctk.CTkFrame(self)
