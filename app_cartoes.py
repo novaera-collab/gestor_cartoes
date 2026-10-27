@@ -271,29 +271,4 @@ class LupaFilialModal(ctk.CTkToplevel):
                 nome_str = str(fil['nome'] or '').strip()
                 
                 ctk.CTkLabel(row, text=f"[{cod_str}]", font=ctk.CTkFont(weight="bold"), width=60).pack(side="left", padx=5)
-                ctk.CTkLabel(row, text=nome_str, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
-                btn_sel = ctk.CTkButton(row, text="✔", width=40, command=lambda c=cod_str, n=nome_str: self.selecionar(c, n))
-                btn_sel.pack(side="right", padx=5)
-        except Exception as err:
-            messagebox.showerror("Erro", f"Erro na consulta de filiais em {schema_emp}:\n{err}", parent=self)
-
-    def selecionar(self, cod_str, nome_str):
-        self.callback(cod_str, nome_str)
-        self.destroy()
-
-class LupaGenericModal(ctk.CTkToplevel):
-    def __init__(self, parent, cod_empresa, titulo, tabela, col_cod, col_desc, callback):
-        super().__init__(parent)
-        self.cod_empresa = cod_empresa
-        self.titulo = titulo
-        self.tabela = tabela
-        self.col_cod = col_cod
-        self.col_desc = col_desc
-        self.callback = callback
-
-        self.title(f"Consultar {self.titulo}")
-        
-        frame_top = ctk.CTkFrame(self)
-        frame_top.pack(fill="x", padx=10, pady=10)
-        
-        self.txt_busca = ctk.CTkEntry(frame_top, width=300, placeholder_text
+                ctk.CTkLabel(row, text=nome_str, anchor="w").pack(side="left",
