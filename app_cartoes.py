@@ -183,10 +183,10 @@ class LupaEmpresaModal(ctk.CTkToplevel):
             cur = conn.cursor()
             
             if not termo:
-                query_xgeral = "SELECT fco AS codigo, fnu AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
+                query_xgeral = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
                 query_params = ()
             else:
-                query_xgeral = "SELECT fco AS codigo, fnu AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fnu ILIKE %s ORDER BY fco LIMIT 50;"
+                query_xgeral = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fnu ILIKE %s ORDER BY fco LIMIT 50;"
                 query_params = (f"%{termo}%", f"%{termo}%")
 
             cur.execute(query_xgeral, query_params)
