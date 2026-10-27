@@ -250,10 +250,10 @@ class LupaFilialModal(ctk.CTkToplevel):
             cur = conn.cursor()
             
             if not termo:
-                query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil ORDER BY fcodigo LIMIT 50"
+                query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil ORDER BY fcodigo LIMIT 50;"
                 params = ()
             else:
-                query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil WHERE CAST(fcodigo AS TEXT) ILIKE %s OR fnome ILIKE %s ORDER BY fcodigo LIMIT 50"
+                query = f"SELECT fcodigo AS codigo, fnome AS nome FROM {schema_emp}.gefil WHERE CAST(fcodigo AS TEXT) ILIKE %s OR fnome ILIKE %s ORDER BY fcodigo LIMIT 50;"
                 params = (f"%{termo}%", f"%{termo}%")
                 
             cur.execute(query, params)
@@ -296,28 +296,4 @@ class LupaGenericModal(ctk.CTkToplevel):
         frame_top = ctk.CTkFrame(self)
         frame_top.pack(fill="x", padx=10, pady=10)
         
-        self.txt_busca = ctk.CTkEntry(frame_top, width=300, placeholder_text="Buscar código ou descrição...")
-        self.txt_busca.pack(side="left", padx=5)
-        self.txt_busca.bind("<Return>", lambda e: self.pesquisar())
-        
-        btn_busca = ctk.CTkButton(frame_top, text="🔍 Buscar", command=self.pesquisar)
-        btn_busca.pack(side="left", padx=5)
-
-        self.frame_lista = ctk.CTkScrollableFrame(self)
-        self.frame_lista.pack(fill="both", expand=True, padx=10, pady=5)
-        
-        centralizar_modal(self, 520, 420)
-        self.pesquisar()
-
-    def pesquisar(self):
-        for w in self.frame_lista.winfo_children():
-            w.destroy()
-        termo = self.txt_busca.get().strip()
-        schema_emp = f"xemp_{str(self.cod_empresa).zfill(4)}"
-        try:
-            conn = get_connection()
-            cur = conn.cursor()
-            
-            if not termo:
-                query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} ORDER BY {self.col_cod} LIMIT 50"
-                params = ()
+        self.txt_busca = ctk.CTkEntry(frame_top, width=300, placeholder_text
