@@ -97,6 +97,22 @@ def centralizar_modal(modal, largura, altura):
     modal.grab_set()
     modal.focus_force()
 
+def obter_schema_tabela_existente(conn, cod_empresa, nome_tabela):
+    """
+    Testa se a tabela existe no schema da empresa (ex: xemp_0002).
+    Se nao existir, recorre ao schema de compartilhamento xemp_0001.
+    """
+    schema_alvo = f"xemp_{str(cod_empresa).zfill(4)}"
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = %s AND table_name = %s
+    """, (schema_alvo, nome_tabela))
+    existe = cur.fetchone()
+    if existe:
+        return schema_alvo
+    return "xemp_0001"
+
 # ==========================================
 # CRIAÇÃO AUTOMÁTICA DE SCHEMA E TABELAS
 # ==========================================
@@ -147,7 +163,7 @@ def criar_tabelas_banco():
     conn.close()
 
 # ==========================================
-# MODAIS DE PESQUISA (LUPAS)
+# MODAIS DE PESQUISA (LUPAS) E DUPLICAÇÃO
 # ==========================================
 
 class LupaEmpresaModal(ctk.CTkToplevel):
@@ -244,9 +260,9 @@ class LupaFilialModal(ctk.CTkToplevel):
         for w in self.frame_lista.winfo_children():
             w.destroy()
         termo = self.txt_busca.get().strip()
-        schema_emp = f"xemp_{str(self.cod_empresa).zfill(4)}"
         try:
             conn = get_connection()
+            schema_emp = obter_schema_tabela_existente(conn, self.cod_empresa, "gefil")
             cur = conn.cursor()
             
             if not termo:
@@ -275,7 +291,7 @@ class LupaFilialModal(ctk.CTkToplevel):
                 btn_sel = ctk.CTkButton(row, text="✔", width=40, command=lambda c=cod_str, n=nome_str: self.selecionar(c, n))
                 btn_sel.pack(side="right", padx=5)
         except Exception as err:
-            messagebox.showerror("Erro", f"Erro na consulta de filiais em {schema_emp}:\n{err}", parent=self)
+            messagebox.showerror("Erro", f"Erro na consulta de filiais:\n{err}", parent=self)
 
     def selecionar(self, cod_str, nome_str):
         self.callback(cod_str, nome_str)
@@ -313,9 +329,9 @@ class LupaGenericModal(ctk.CTkToplevel):
         for w in self.frame_lista.winfo_children():
             w.destroy()
         termo = self.txt_busca.get().strip()
-        schema_emp = f"xemp_{str(self.cod_empresa).zfill(4)}"
         try:
             conn = get_connection()
+            schema_emp = obter_schema_tabela_existente(conn, self.cod_empresa, self.tabela)
             cur = conn.cursor()
             
             if not termo:
@@ -344,11 +360,136 @@ class LupaGenericModal(ctk.CTkToplevel):
                 btn_sel = ctk.CTkButton(row, text="✔", width=40, command=lambda c=cod_str, d=desc_str: self.selecionar(c, d))
                 btn_sel.pack(side="right", padx=5)
         except Exception as err:
-            messagebox.showerror("Erro", f"Erro na consulta de {self.titulo} em {schema_emp}:\n{err}", parent=self)
+            messagebox.showerror("Erro", f"Erro na consulta de {self.titulo}:\n{err}", parent=self)
 
     def selecionar(self, cod_str, desc_str):
         self.callback(cod_str, desc_str)
         self.destroy()
+
+class DuplicarBandeiraModal(ctk.CTkToplevel):
+    def __init__(self, parent, cabecalho_id, callback_sucesso):
+        super().__init__(parent)
+        self.cabecalho_id = cabecalho_id
+        self.callback_sucesso = callback_sucesso
+        self.title("Duplicar Cadastro de Bandeira & Taxas")
+
+        self.emp_dest = {"codigo": "", "nome": ""}
+        self.fil_dest = {"codigo": "", "nome": ""}
+
+        frame_info = ctk.CTkFrame(self)
+        frame_info.pack(fill="x", padx=15, pady=10)
+        ctk.CTkLabel(frame_info, text="Selecione a Empresa e Filial de Destino:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
+
+        # Seleção Empresa
+        frame_emp = ctk.CTkFrame(frame_info, fg_color="transparent")
+        frame_emp.pack(fill="x", padx=5, pady=5)
+        ctk.CTkLabel(frame_emp, text="Empresa Destino:", width=120, anchor="w").pack(side="left")
+        self.txt_emp = ctk.CTkEntry(frame_emp, width=240, placeholder_text="Selecione...")
+        self.txt_emp.pack(side="left", padx=5)
+        btn_lupa_emp = ctk.CTkButton(frame_emp, text="🔍", width=36, command=self.abrir_lupa_emp)
+        btn_lupa_emp.pack(side="left")
+
+        # Seleção Filial
+        frame_fil = ctk.CTkFrame(frame_info, fg_color="transparent")
+        frame_fil.pack(fill="x", padx=5, pady=5)
+        ctk.CTkLabel(frame_fil, text="Filial Destino:", width=120, anchor="w").pack(side="left")
+        self.txt_fil = ctk.CTkEntry(frame_fil, width=240, placeholder_text="Selecione...")
+        self.txt_fil.pack(side="left", padx=5)
+        btn_lupa_fil = ctk.CTkButton(frame_fil, text="🔍", width=36, command=self.abrir_lupa_fil)
+        btn_lupa_fil.pack(side="left")
+
+        btn_confirmar = ctk.CTkButton(self, text="📋 Confirmar Duplicação", fg_color="#0288D1", hover_color="#0277BD", font=ctk.CTkFont(weight="bold"), command=self.executar_duplicacao)
+        btn_confirmar.pack(fill="x", padx=15, pady=15)
+
+        centralizar_modal(self, 480, 250)
+
+    def abrir_lupa_emp(self):
+        LupaEmpresaModal(self, callback=self.set_empresa)
+
+    def set_empresa(self, cod, nome):
+        self.emp_dest = {"codigo": cod, "nome": nome}
+        self.txt_emp.delete(0, 'end')
+        self.txt_emp.insert(0, f"[{cod}] {nome}")
+
+    def abrir_lupa_fil(self):
+        if not self.emp_dest["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione a Empresa de destino primeiro!", parent=self)
+            return
+        LupaFilialModal(self, cod_empresa=self.emp_dest["codigo"], callback=self.set_filial)
+
+    def set_filial(self, cod, nome):
+        self.fil_dest = {"codigo": cod, "nome": nome}
+        self.txt_fil.delete(0, 'end')
+        self.txt_fil.insert(0, f"[{cod}] {nome}")
+
+    def executar_duplicacao(self):
+        emp_d = self.emp_dest["codigo"]
+        fil_d = self.fil_dest["codigo"]
+
+        if not emp_d or not fil_d:
+            messagebox.showwarning("Atenção", "Selecione a Empresa e Filial de destino!", parent=self)
+            return
+
+        schema = get_schema()
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+
+            # 1. Busca dados do cabeçalho de origem
+            cur.execute(f"SELECT * FROM {schema}.cabecalho_cadastro_bandeiras WHERE id = %s", (self.cabecalho_id,))
+            cab_origem = cur.fetchone()
+
+            if not cab_origem:
+                messagebox.showerror("Erro", "Cabeçalho de origem não encontrado!", parent=self)
+                return
+
+            # 2. Busca cadastro da bandeira correspondente de origem
+            cur.execute(f"SELECT * FROM {schema}.bandeiras WHERE empresa_codigo=%s AND filial_codigo=%s AND codigo=%s",
+                        (cab_origem['empresa_codigo'], cab_origem['filial_codigo'], cab_origem['bandeira_codigo']))
+            band_origem = cur.fetchone()
+
+            # 3. Garante/Grava cadastro da bandeira no destino
+            if band_origem:
+                cur.execute(f"""
+                    INSERT INTO {schema}.bandeiras (codigo, empresa_codigo, filial_codigo, descricao, icone)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (empresa_codigo, filial_codigo, codigo) DO UPDATE SET descricao = EXCLUDED.descricao
+                """, (band_origem['codigo'], emp_d, fil_d, band_origem['descricao'], band_origem['icone']))
+
+            # 4. Insere novo cabeçalho no destino
+            cur.execute(f"""
+                INSERT INTO {schema}.cabecalho_cadastro_bandeiras 
+                (empresa_codigo, filial_codigo, bandeira_codigo, conta_baixa, portador, tipo_cobranca, taxa_antecipacao_automatica, taxa_antecipacao_pontual)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;
+            """, (
+                emp_d, 
+                fil_d, 
+                cab_origem['bandeira_codigo'], 
+                cab_origem['conta_baixa'], 
+                cab_origem['portador'], 
+                cab_origem['tipo_cobranca'], 
+                cab_origem['taxa_antecipacao_automatica'], 
+                cab_origem['taxa_antecipacao_pontual']
+            ))
+            novo_cab_id = cur.fetchone()['id']
+
+            # 5. Duplica itens (faixas de parcelas)
+            cur.execute(f"""
+                INSERT INTO {schema}.item_cabecalho_cadastro_bandeiras (cabecalho_id, parcela_inicial, parcela_final, sinal, dias, taxa)
+                SELECT %s, parcela_inicial, parcela_final, sinal, dias, taxa
+                FROM {schema}.item_cabecalho_cadastro_bandeiras
+                WHERE cabecalho_id = %s;
+            """, (novo_cab_id, self.cabecalho_id))
+
+            conn.commit()
+            conn.close()
+
+            messagebox.showinfo("Sucesso", f"Bandeira [{cab_origem['bandeira_codigo']}] duplicada com sucesso para Empresa [{emp_d}] Filial [{fil_d}]!", parent=self)
+            self.callback_sucesso()
+            self.destroy()
+
+        except Exception as err:
+            messagebox.showerror("Erro ao Duplicar", f"Falha ao duplicar cadastro:\n{err}", parent=self)
 
 # ==========================================
 # JANELA DE CONFIGURAÇÃO DO BANCO DE DADOS
@@ -400,7 +541,7 @@ class AppCartoesPrincipal(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Gestor de Taxas de Cartões de Crédito")
-        self.geometry("1100x720")
+        self.geometry("1150x720")
 
         self.empresa_sel = {"codigo": "", "nome": ""}
         self.filial_sel = {"codigo": "", "nome": ""}
@@ -636,19 +777,31 @@ class AppCartoesPrincipal(ctk.CTk):
                 ctk.CTkLabel(row, text=lbl_desc, font=ctk.CTkFont(size=14), anchor="w").pack(side="left", fill="x", expand=True, padx=10)
 
                 btn_edt = ctk.CTkButton(row, text="✏️ Editar", width=80, fg_color="#F57C00", hover_color="#E65100", command=lambda cid=item['id']: self.editar_bandeira(cid))
-                btn_edt.pack(side="right", padx=5)
+                btn_edt.pack(side="right", padx=3)
+
+                btn_dup = ctk.CTkButton(row, text="📋 Duplicar", width=85, fg_color="#0288D1", hover_color="#0277BD", command=lambda cid=item['id']: self.duplicar_bandeira(cid))
+                btn_dup.pack(side="right", padx=3)
 
                 btn_del = ctk.CTkButton(row, text="🗑️ Excluir", width=80, fg_color="#C62828", hover_color="#B71C1C", command=lambda cid=item['id']: self.excluir_bandeira(cid))
-                btn_del.pack(side="right", padx=5)
+                btn_del.pack(side="right", padx=3)
 
         except Exception as err:
             messagebox.showerror("Erro ao Listar", f"Falha ao buscar bandeiras salvas:\n{err}", parent=self)
 
+    def duplicar_bandeira(self, cabecalho_id):
+        DuplicarBandeiraModal(self, cabecalho_id, callback_sucesso=self.carregar_lista_bandeiras)
+
     def editar_bandeira(self, cabecalho_id):
         schema = get_schema()
-        schema_emp = f"xemp_{str(self.empresa_sel['codigo']).zfill(4)}"
+        emp_cod = self.empresa_sel['codigo']
         try:
             conn = get_connection()
+
+            # Descobre schemas corretos das tabelas auxiliares (com fallback para xemp_0001)
+            schema_bcconta = obter_schema_tabela_existente(conn, emp_cod, "bcconta")
+            schema_rpport = obter_schema_tabela_existente(conn, emp_cod, "rpport")
+            schema_rpcobr = obter_schema_tabela_existente(conn, emp_cod, "rpcobr")
+
             cur = conn.cursor()
 
             # 1. Carrega Cabeçalho
@@ -674,21 +827,21 @@ class AppCartoesPrincipal(ctk.CTk):
             self.txt_tx_auto.insert(0, str(cab['taxa_antecipacao_automatica'] or 0.0))
             self.txt_tx_pontual.insert(0, str(cab['taxa_antecipacao_pontual'] or 0.0))
 
-            # 3. Descrições das tabelas auxiliares
+            # 3. Descrições das tabelas auxiliares tratando compartilhamento
             if cab['conta_baixa']:
-                cur.execute(f"SELECT fno AS desc FROM {schema_emp}.bcconta WHERE fco = %s", (cab['conta_baixa'],))
+                cur.execute(f"SELECT fno AS desc FROM {schema_bcconta}.bcconta WHERE fco = %s", (cab['conta_baixa'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_conta(cab['conta_baixa'], desc)
 
             if cab['portador']:
-                cur.execute(f"SELECT fde AS desc FROM {schema_emp}.rpport WHERE fco = %s", (cab['portador'],))
+                cur.execute(f"SELECT fde AS desc FROM {schema_rpport}.rpport WHERE fco = %s", (cab['portador'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_portador(cab['portador'], desc)
 
             if cab['tipo_cobranca']:
-                cur.execute(f"SELECT fde AS desc FROM {schema_emp}.rpcobr WHERE fco = %s", (cab['tipo_cobranca'],))
+                cur.execute(f"SELECT fde AS desc FROM {schema_rpcobr}.rpcobr WHERE fco = %s", (cab['tipo_cobranca'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_tipo_cobranca(cab['tipo_cobranca'], desc)
