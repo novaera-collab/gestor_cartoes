@@ -892,7 +892,11 @@ class AppCartoesPrincipal(ctk.CTk):
                 self.set_tipo_cobranca(cab['tipo_cobranca'], desc)
 
             if cab.get('cod_mov'):
-                cur.execute(f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov WHERE fcodigo = %s", (cab['cod_mov'],))
+                cur.execute(
+                f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov "
+                f"WHERE fcodigo = %s AND fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C'", 
+                (cab['cod_mov'],)
+                )
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_cod_mov(cab['cod_mov'], desc)
