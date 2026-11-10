@@ -98,10 +98,6 @@ def centralizar_modal(modal, largura, altura):
     modal.focus_force()
 
 def obter_schema_tabela_existente(conn, cod_empresa, nome_tabela):
-    """
-    Testa se a tabela existe no schema da empresa (ex: xemp_0002).
-    Se nao existir, recorre ao schema de compartilhamento xemp_0001.
-    """
     schema_alvo = f"xemp_{str(cod_empresa).zfill(4)}"
     cur = conn.cursor()
     cur.execute("""
@@ -122,7 +118,6 @@ def criar_tabelas_banco():
     sql_script = f"""
     CREATE SCHEMA IF NOT EXISTS {schema};
 
-    -- TABELA BANDEIRA
     CREATE TABLE IF NOT EXISTS {schema}.bandeiras (
         codigo VARCHAR(10) NOT NULL,
         empresa_codigo VARCHAR(10) NOT NULL,
@@ -132,7 +127,6 @@ def criar_tabelas_banco():
         PRIMARY KEY (empresa_codigo, filial_codigo, codigo)
     );
 
-    -- TABELA CABECALHO CADASTRO BANDEIRAS
     CREATE TABLE IF NOT EXISTS {schema}.cabecalho_cadastro_bandeiras (
         id SERIAL PRIMARY KEY,
         empresa_codigo VARCHAR(10) NOT NULL,
@@ -150,7 +144,6 @@ def criar_tabelas_banco():
     ALTER TABLE {schema}.cabecalho_cadastro_bandeiras ADD COLUMN IF NOT EXISTS cod_mov VARCHAR(50);
     ALTER TABLE {schema}.cabecalho_cadastro_bandeiras ADD COLUMN IF NOT EXISTS tipo_rec VARCHAR(50);
 
-    -- TABELA ITEM CABECALHO CADASTRO BANDEIRAS
     CREATE TABLE IF NOT EXISTS {schema}.item_cabecalho_cadastro_bandeiras (
         id SERIAL PRIMARY KEY,
         cabecalho_id INTEGER REFERENCES {schema}.cabecalho_cadastro_bandeiras(id) ON DELETE CASCADE,
@@ -204,13 +197,13 @@ class LupaEmpresaModal(ctk.CTkToplevel):
             cur = conn.cursor()
             
             if not termo:
-                query_xgeral = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
-                query_params = ()
+                query = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
+                params = ()
             else:
-                query_xgeral = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fno ILIKE %s ORDER BY fco LIMIT 50;"
-                query_params = (f"%{termo}%", f"%{termo}%")
+                query = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fno ILIKE %s ORDER BY fco LIMIT 50;"
+                params = (f"%{termo}%", f"%{termo}%")
 
-            cur.execute(query_xgeral, query_params)
+            cur.execute(query, params)
             res = cur.fetchall()
             conn.close()
 
@@ -395,7 +388,6 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
         frame_info.pack(fill="x", padx=15, pady=10)
         ctk.CTkLabel(frame_info, text="Selecione a Empresa e Filial de Destino:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
 
-        # Seleção Empresa
         frame_emp = ctk.CTkFrame(frame_info, fg_color="transparent")
         frame_emp.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(frame_emp, text="Empresa Destino:", width=120, anchor="w").pack(side="left")
@@ -404,7 +396,6 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
         btn_lupa_emp = ctk.CTkButton(frame_emp, text="🔍", width=36, command=self.abrir_lupa_emp)
         btn_lupa_emp.pack(side="left")
 
-        # Seleção Filial
         frame_fil = ctk.CTkFrame(frame_info, fg_color="transparent")
         frame_fil.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(frame_fil, text="Filial Destino:", width=120, anchor="w").pack(side="left")
@@ -450,7 +441,6 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
             conn = get_connection()
             cur = conn.cursor()
 
-            # 1. Busca dados do cabeçalho de origem
             cur.execute(f"SELECT * FROM {schema}.cabecalho_cadastro_bandeiras WHERE id = %s", (self.cabecalho_id,))
             cab_origem = cur.fetchone()
 
@@ -458,12 +448,10 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
                 messagebox.showerror("Erro", "Cabeçalho de origem não encontrado!", parent=self)
                 return
 
-            # 2. Busca cadastro da bandeira correspondente de origem
             cur.execute(f"SELECT * FROM {schema}.bandeiras WHERE empresa_codigo=%s AND filial_codigo=%s AND codigo=%s",
                         (cab_origem['empresa_codigo'], cab_origem['filial_codigo'], cab_origem['bandeira_codigo']))
             band_origem = cur.fetchone()
 
-            # 3. Garante/Grava cadastro da bandeira no destino
             if band_origem:
                 cur.execute(f"""
                     INSERT INTO {schema}.bandeiras (codigo, empresa_codigo, filial_codigo, descricao, icone)
@@ -471,7 +459,6 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
                     ON CONFLICT (empresa_codigo, filial_codigo, codigo) DO UPDATE SET descricao = EXCLUDED.descricao
                 """, (band_origem['codigo'], emp_d, fil_d, band_origem['descricao'], band_origem['icone']))
 
-            # 4. Insere novo cabeçalho no destino
             cur.execute(f"""
                 INSERT INTO {schema}.cabecalho_cadastro_bandeiras 
                 (empresa_codigo, filial_codigo, bandeira_codigo, conta_baixa, portador, tipo_cobranca, cod_mov, tipo_rec, taxa_antecipacao_automatica, taxa_antecipacao_pontual)
@@ -490,7 +477,6 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
             ))
             novo_cab_id = cur.fetchone()['id']
 
-            # 5. Duplica itens (faixas de parcelas)
             cur.execute(f"""
                 INSERT INTO {schema}.item_cabecalho_cadastro_bandeiras (cabecalho_id, parcela_inicial, parcela_final, sinal, dias, taxa)
                 SELECT %s, parcela_inicial, parcela_final, sinal, dias, taxa
@@ -573,7 +559,6 @@ class AppCartoesPrincipal(ctk.CTk):
         self.criar_layout()
 
     def criar_layout(self):
-        # BANNER / TOPO
         frame_top = ctk.CTkFrame(self)
         frame_top.pack(fill="x", padx=15, pady=10)
 
@@ -581,7 +566,6 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_config = ctk.CTkButton(frame_top, text="⚙️ Conf. Banco", fg_color="#455A64", hover_color="#37474F", command=self.abrir_config)
         btn_config.pack(side="right", padx=15)
 
-        # PAINEL EMPRESA E FILIAL
         frame_emp_fil = ctk.CTkFrame(self)
         frame_emp_fil.pack(fill="x", padx=15, pady=5)
 
@@ -597,11 +581,9 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_fil = ctk.CTkButton(frame_emp_fil, text="🔍", width=36, command=self.abrir_lupa_fil)
         btn_lupa_fil.grid(row=0, column=5, padx=2, pady=8)
 
-        # PAINEL PRINCIPAL DE CONTEÚDO (MUDANÇA DE TELAS)
         self.frame_conteudo = ctk.CTkFrame(self)
         self.frame_conteudo.pack(fill="both", expand=True, padx=15, pady=10)
 
-        # 1. TELA DE LISTAGEM DE BANDEIRAS
         self.frame_lista_bandeiras = ctk.CTkFrame(self.frame_conteudo)
         
         frame_header_lista = ctk.CTkFrame(self.frame_lista_bandeiras, fg_color="transparent")
@@ -614,7 +596,6 @@ class AppCartoesPrincipal(ctk.CTk):
         self.scroll_bandeiras = ctk.CTkScrollableFrame(self.frame_lista_bandeiras)
         self.scroll_bandeiras.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # 2. TELA DE FORMULÁRIO DE CADASTRO / EDIÇÃO
         self.frame_form_bandeira = ctk.CTkFrame(self.frame_conteudo)
 
         frame_header_form = ctk.CTkFrame(self.frame_form_bandeira, fg_color="transparent")
@@ -626,11 +607,9 @@ class AppCartoesPrincipal(ctk.CTk):
         self.lbl_titulo_form = ctk.CTkLabel(frame_header_form, text="Cadastro de Bandeira & Taxas", font=ctk.CTkFont(size=15, weight="bold"))
         self.lbl_titulo_form.pack(side="left", padx=15)
 
-        # FORMULÁRIO BANDEIRA E CABEÇALHO
         frame_form = ctk.CTkFrame(self.frame_form_bandeira)
         frame_form.pack(fill="x", padx=10, pady=5)
 
-        # LINHA 0: BANDEIRA
         ctk.CTkLabel(frame_form, text="Cód. Bandeira:").grid(row=0, column=0, padx=8, pady=5, sticky="w")
         self.txt_band_cod = ctk.CTkEntry(frame_form, width=80, placeholder_text="001")
         self.txt_band_cod.grid(row=0, column=1, padx=5, pady=5, sticky="w")
@@ -639,20 +618,15 @@ class AppCartoesPrincipal(ctk.CTk):
         self.txt_band_desc = ctk.CTkEntry(frame_form, width=300, placeholder_text="VISA / MASTERCARD...")
         self.txt_band_desc.grid(row=0, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
-        # LINHA 1: CONTA BAIXA
         ctk.CTkLabel(frame_form, text="Conta Baixa:").grid(row=1, column=0, padx=8, pady=5, sticky="w")
-        
         frame_conta_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_conta_box.grid(row=1, column=1, columnspan=5, padx=5, pady=5, sticky="w")
-        
         self.txt_conta = ctk.CTkEntry(frame_conta_box, width=450, placeholder_text="Selecione na Lupa...")
         self.txt_conta.pack(side="left", padx=(0, 5))
         btn_lupa_conta = ctk.CTkButton(frame_conta_box, text="🔍", width=36, command=self.abrir_lupa_conta)
         btn_lupa_conta.pack(side="left")
 
-        # LINHA 2: PORTADOR E TIPO COBRANÇA
         ctk.CTkLabel(frame_form, text="Portador:").grid(row=2, column=0, padx=8, pady=5, sticky="w")
-        
         frame_port_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_port_box.grid(row=2, column=1, padx=5, pady=5, sticky="w")
         self.txt_portador = ctk.CTkEntry(frame_port_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -661,7 +635,6 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_port.pack(side="left")
 
         ctk.CTkLabel(frame_form, text="Tipo Cobrança:").grid(row=2, column=2, padx=8, pady=5, sticky="w")
-        
         frame_cobr_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_cobr_box.grid(row=2, column=3, columnspan=3, padx=5, pady=5, sticky="w")
         self.txt_tipo_cobranca = ctk.CTkEntry(frame_cobr_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -669,9 +642,7 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_cobr = ctk.CTkButton(frame_cobr_box, text="🔍", width=36, command=self.abrir_lupa_tipo_cobranca)
         btn_lupa_cobr.pack(side="left")
 
-        # LINHA 3: COD. MOV BAIXA E TIPO REC. BAIXA
         ctk.CTkLabel(frame_form, text="Cod. Mov Baixa:").grid(row=3, column=0, padx=8, pady=5, sticky="w")
-        
         frame_mov_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_mov_box.grid(row=3, column=1, padx=5, pady=5, sticky="w")
         self.txt_cod_mov = ctk.CTkEntry(frame_mov_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -680,7 +651,6 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_mov.pack(side="left")
 
         ctk.CTkLabel(frame_form, text="Tipo Rec.baixa:").grid(row=3, column=2, padx=8, pady=5, sticky="w")
-        
         frame_rec_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_rec_box.grid(row=3, column=3, columnspan=3, padx=5, pady=5, sticky="w")
         self.txt_tipo_rec = ctk.CTkEntry(frame_rec_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -688,7 +658,6 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_rec = ctk.CTkButton(frame_rec_box, text="🔍", width=36, command=self.abrir_lupa_tipo_rec)
         btn_lupa_rec.pack(side="left")
 
-        # LINHA 4: TAXAS DE ANTECIPAÇÃO
         ctk.CTkLabel(frame_form, text="% Antecip. Auto:").grid(row=4, column=0, padx=8, pady=5, sticky="w")
         self.txt_tx_auto = ctk.CTkEntry(frame_form, width=100, placeholder_text="0.00")
         self.txt_tx_auto.grid(row=4, column=1, padx=5, pady=5, sticky="w")
@@ -697,7 +666,6 @@ class AppCartoesPrincipal(ctk.CTk):
         self.txt_tx_pontual = ctk.CTkEntry(frame_form, width=100, placeholder_text="0.00")
         self.txt_tx_pontual.grid(row=4, column=3, padx=5, pady=5, sticky="w")
 
-        # FORMULÁRIO ITEM DA TAXA (PARCELAS)
         frame_item = ctk.CTkFrame(self.frame_form_bandeira)
         frame_item.pack(fill="x", padx=10, pady=5)
 
@@ -724,11 +692,9 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_add_item = ctk.CTkButton(frame_item, text="➕ Add Faixa", width=90, fg_color="#1976D2", hover_color="#0D47A1", command=self.adicionar_item_parcela)
         btn_add_item.grid(row=0, column=10, padx=8, pady=5)
 
-        # TABELA DE PARCELAS/TAXAS
         self.frame_grid = ctk.CTkScrollableFrame(self.frame_form_bandeira, height=180)
         self.frame_grid.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # BOTÃO SALVAR
         frame_bot = ctk.CTkFrame(self.frame_form_bandeira, fg_color="transparent")
         frame_bot.pack(fill="x", padx=10, pady=10)
 
@@ -828,3 +794,323 @@ class AppCartoesPrincipal(ctk.CTk):
                 btn_del.pack(side="right", padx=3)
 
         except Exception as err:
+            messagebox.showerror("Erro ao Listar", f"Falha ao buscar bandeiras salvas:\n{err}", parent=self)
+
+    def duplicar_bandeira(self, cabecalho_id):
+        DuplicarBandeiraModal(self, cabecalho_id, callback_sucesso=self.carregar_lista_bandeiras)
+
+    def editar_bandeira(self, cabecalho_id):
+        schema = get_schema()
+        emp_cod = self.empresa_sel['codigo']
+        try:
+            conn = get_connection()
+
+            schema_bcconta = obter_schema_tabela_existente(conn, emp_cod, "bcconta")
+            schema_rpport = obter_schema_tabela_existente(conn, emp_cod, "rpport")
+            schema_rpcobr = obter_schema_tabela_existente(conn, emp_cod, "rpcobr")
+            schema_bccmov = obter_schema_tabela_existente(conn, emp_cod, "bccmov")
+            schema_rptiprp = obter_schema_tabela_existente(conn, emp_cod, "rptiprp")
+
+            cur = conn.cursor()
+
+            cur.execute(f"SELECT * FROM {schema}.cabecalho_cadastro_bandeiras WHERE id = %s", (cabecalho_id,))
+            cab = cur.fetchone()
+
+            if not cab:
+                messagebox.showerror("Erro", "Registro não encontrado!", parent=self)
+                return
+
+            self.editando_id = cabecalho_id
+            self.limpar_formulario()
+            self.lbl_titulo_form.configure(text=f"Editando Bandeira [{cab['bandeira_codigo']}]")
+
+            cur.execute(f"SELECT descricao FROM {schema}.bandeiras WHERE empresa_codigo=%s AND filial_codigo=%s AND codigo=%s", 
+                        (cab['empresa_codigo'], cab['filial_codigo'], cab['bandeira_codigo']))
+            b_info = cur.fetchone()
+            desc_b = b_info['descricao'] if b_info else ""
+
+            self.txt_band_cod.insert(0, cab['bandeira_codigo'])
+            self.txt_band_desc.insert(0, desc_b)
+            self.txt_tx_auto.insert(0, str(cab['taxa_antecipacao_automatica'] or 0.0))
+            self.txt_tx_pontual.insert(0, str(cab['taxa_antecipacao_pontual'] or 0.0))
+
+            if cab.get('conta_baixa'):
+                cur.execute(f"SELECT fno AS desc FROM {schema_bcconta}.bcconta WHERE fco = %s", (cab['conta_baixa'],))
+                r = cur.fetchone()
+                desc = r['desc'] if r else ""
+                self.set_conta(cab['conta_baixa'], desc)
+
+            if cab.get('portador'):
+                cur.execute(f"SELECT fde AS desc FROM {schema_rpport}.rpport WHERE fco = %s", (cab['portador'],))
+                r = cur.fetchone()
+                desc = r['desc'] if r else ""
+                self.set_portador(cab['portador'], desc)
+
+            if cab.get('tipo_cobranca'):
+                cur.execute(f"SELECT fde AS desc FROM {schema_rpcobr}.rpcobr WHERE fco = %s", (cab['tipo_cobranca'],))
+                r = cur.fetchone()
+                desc = r['desc'] if r else ""
+                self.set_tipo_cobranca(cab['tipo_cobranca'], desc)
+
+            if cab.get('cod_mov'):
+                cur.execute(
+                    f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov "
+                    f"WHERE fcodigo = %s AND fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C' "
+                    f"AND (fdescricao ILIKE %s OR fdescricao ILIKE %s)", 
+                    (cab['cod_mov'], '%cartao%', '%cartão%')
+                )
+                r = cur.fetchone()
+                desc = r['desc'] if r else ""
+                self.set_cod_mov(cab['cod_mov'], desc)
+
+            if cab.get('tipo_rec'):
+                cur.execute(f"SELECT fdescricao AS desc FROM {schema_rptiprp}.rptiprp WHERE fcodigo = %s", (cab['tipo_rec'],))
+                r = cur.fetchone()
+                desc = r['desc'] if r else ""
+                self.set_tipo_rec(cab['tipo_rec'], desc)
+
+            cur.execute(f"SELECT * FROM {schema}.item_cabecalho_cadastro_bandeiras WHERE cabecalho_id = %s ORDER BY parcela_inicial", (cabecalho_id,))
+            itens = cur.fetchall()
+            for it in itens:
+                self.itens_parcela.append({
+                    "p_ini": it['parcela_inicial'],
+                    "p_fim": it['parcela_final'],
+                    "sinal": it['sinal'],
+                    "dias": it['dias'],
+                    "taxa": float(it['taxa'])
+                })
+
+            self.atualizar_grid_items()
+            conn.close()
+
+            self.exibir_formulario()
+
+        except Exception as err:
+            messagebox.showerror("Erro ao Editar", f"Falha ao carregar dados para edição:\n{err}", parent=self)
+
+    def excluir_bandeira(self, cabecalho_id):
+        if not messagebox.askyesno("Confirmação", "Deseja realmente excluir esta bandeira e suas taxas?", parent=self):
+            return
+
+        schema = get_schema()
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(f"DELETE FROM {schema}.cabecalho_cadastro_bandeiras WHERE id = %s", (cabecalho_id,))
+            conn.commit()
+            conn.close()
+            messagebox.showinfo("Sucesso", "Registro excluído com sucesso!", parent=self)
+            self.carregar_lista_bandeiras()
+        except Exception as err:
+            messagebox.showerror("Erro ao Excluir", f"Falha ao excluir registro:\n{err}", parent=self)
+
+    def abrir_config(self):
+        ConfigBancoWindow(self)
+
+    def abrir_lupa_emp(self):
+        LupaEmpresaModal(self, callback=self.set_empresa)
+
+    def set_empresa(self, cod, nome):
+        self.empresa_sel = {"codigo": cod, "nome": nome}
+        self.txt_emp.delete(0, 'end')
+        self.txt_emp.insert(0, f"[{cod}] {nome}")
+        self.carregar_lista_bandeiras()
+
+    def abrir_lupa_fil(self):
+        if not self.empresa_sel["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
+            return
+        LupaFilialModal(self, cod_empresa=self.empresa_sel["codigo"], callback=self.set_filial)
+
+    def set_filial(self, cod, nome):
+        self.filial_sel = {"codigo": cod, "nome": nome}
+        self.txt_fil.delete(0, 'end')
+        self.txt_fil.insert(0, f"[{cod}] {nome}")
+        self.carregar_lista_bandeiras()
+
+    def abrir_lupa_conta(self):
+        if not self.empresa_sel["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
+            return
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Conta para Baixa (bcconta)", tabela="bcconta", col_cod="fco", col_desc="fno", callback=self.set_conta)
+
+    def set_conta(self, cod, desc):
+        self.conta_sel = {"codigo": cod, "nome": desc}
+        self.txt_conta.delete(0, 'end')
+        self.txt_conta.insert(0, f"[{cod}] {desc}")
+
+    def abrir_lupa_portador(self):
+        if not self.empresa_sel["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
+            return
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Portador (rpport)", tabela="rpport", col_cod="fco", col_desc="fde", callback=self.set_portador)
+
+    def set_portador(self, cod, desc):
+        self.portador_sel = {"codigo": cod, "nome": desc}
+        self.txt_portador.delete(0, 'end')
+        self.txt_portador.insert(0, f"[{cod}] {desc}")
+
+    def abrir_lupa_tipo_cobranca(self):
+        if not self.empresa_sel["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
+            return
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Tipo de Cobrança (rpcobr)", tabela="rpcobr", col_cod="fco", col_desc="fde", callback=self.set_tipo_cobranca)
+
+    def set_tipo_cobranca(self, cod, desc):
+        self.tipo_cobranca_sel = {"codigo": cod, "nome": desc}
+        self.txt_tipo_cobranca.delete(0, 'end')
+        self.txt_tipo_cobranca.insert(0, f"[{cod}] {desc}")
+
+    def abrir_lupa_cod_mov(self):
+        if not self.empresa_sel["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
+            return
+        
+        filtro = (
+            "fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C' "
+            "AND (fdescricao ILIKE '%cartao%' OR fdescricao ILIKE '%cartão%')"
+        )
+        LupaGenericModal(
+            self, 
+            cod_empresa=self.empresa_sel["codigo"], 
+            titulo="Cod. Mov Baixa (bccmov)", 
+            tabela="bccmov", 
+            col_cod="fcodigo", 
+            col_desc="fdescricao", 
+            callback=self.set_cod_mov, 
+            filtro_extra=filtro
+        )
+
+    def set_cod_mov(self, cod, desc):
+        self.cod_mov_sel = {"codigo": cod, "nome": desc}
+        self.txt_cod_mov.delete(0, 'end')
+        self.txt_cod_mov.insert(0, f"[{cod}] {desc}")
+
+    def abrir_lupa_tipo_rec(self):
+        if not self.empresa_sel["codigo"]:
+            messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
+            return
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Tipo Rec.baixa (rptiprp)", tabela="rptiprp", col_cod="fcodigo", col_desc="fdescricao", callback=self.set_tipo_rec, filtro_extra="fregativo='S' AND fbaixarp IN ('S','R') AND ftipoforma IN ('3','4')")
+
+    def set_tipo_rec(self, cod, desc):
+        self.tipo_rec_sel = {"codigo": cod, "nome": desc}
+        self.txt_tipo_rec.delete(0, 'end')
+        self.txt_tipo_rec.insert(0, f"[{cod}] {desc}")
+
+    def adicionar_item_parcela(self):
+        try:
+            p_ini = int(self.txt_p_ini.get().strip())
+            p_fim = int(self.txt_p_fim.get().strip())
+            sinal = self.cmb_sinal.get()
+            dias = int(self.txt_dias.get().strip())
+            taxa = float(self.txt_taxa.get().strip().replace(',', '.'))
+        except ValueError:
+            messagebox.showerror("Erro", "Valores de parcelas, dias e taxas devem ser válidos!", parent=self)
+            return
+
+        self.itens_parcela.append({"p_ini": p_ini, "p_fim": p_fim, "sinal": sinal, "dias": dias, "taxa": taxa})
+        self.atualizar_grid_items()
+
+        self.txt_p_ini.delete(0, 'end')
+        self.txt_p_fim.delete(0, 'end')
+        self.txt_dias.delete(0, 'end')
+        self.txt_taxa.delete(0, 'end')
+
+    def atualizar_grid_items(self):
+        for w in self.frame_grid.winfo_children():
+            w.destroy()
+
+        for idx, item in enumerate(self.itens_parcela):
+            row = ctk.CTkFrame(self.frame_grid)
+            row.pack(fill="x", pady=2, padx=2)
+            lbl = f"Parcelas: {item['p_ini']} até {item['p_fim']} | Sinal: {item['sinal']} | Dias: {item['dias']} | Taxa: {item['taxa']:.2f}%"
+            ctk.CTkLabel(row, text=lbl, anchor="w").pack(side="left", padx=10, expand=True)
+            btn_del = ctk.CTkButton(row, text="🗑️", width=32, fg_color="#C62828", hover_color="#B71C1C", command=lambda i=idx: self.remover_item(i))
+            btn_del.pack(side="right", padx=5)
+
+    def remover_item(self, idx):
+        self.itens_parcela.pop(idx)
+        self.atualizar_grid_items()
+
+    def salvar_tudo(self):
+        schema = get_schema()
+        emp_cod = self.empresa_sel["codigo"]
+        fil_cod = self.filial_sel["codigo"]
+        band_cod = self.txt_band_cod.get().strip()
+        band_desc = self.txt_band_desc.get().strip()
+
+        if not emp_cod or not fil_cod or not band_cod or not band_desc:
+            messagebox.showwarning("Atenção", "Selecione Empresa, Filial e preencha Código e Descrição da Bandeira!", parent=self)
+            return
+
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+
+            cur.execute(f"""
+                INSERT INTO {schema}.bandeiras (codigo, empresa_codigo, filial_codigo, descricao)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (empresa_codigo, filial_codigo, codigo) DO UPDATE SET descricao = EXCLUDED.descricao
+            """, (band_cod, emp_cod, fil_cod, band_desc))
+
+            tx_auto = float(self.txt_tx_auto.get().strip().replace(',', '.') or 0)
+            tx_pontual = float(self.txt_tx_pontual.get().strip().replace(',', '.') or 0)
+
+            if self.editando_id:
+                cur.execute(f"""
+                    UPDATE {schema}.cabecalho_cadastro_bandeiras 
+                    SET bandeira_codigo = %s, conta_baixa = %s, portador = %s, tipo_cobranca = %s,
+                        cod_mov = %s, tipo_rec = %s,
+                        taxa_antecipacao_automatica = %s, taxa_antecipacao_pontual = %s
+                    WHERE id = %s
+                """, (band_cod, self.conta_sel["codigo"], self.portador_sel["codigo"], self.tipo_cobranca_sel["codigo"],
+                      self.cod_mov_sel["codigo"], self.tipo_rec_sel["codigo"], tx_auto, tx_pontual, self.editando_id))
+
+                cabecalho_id = self.editando_id
+                cur.execute(f"DELETE FROM {schema}.item_cabecalho_cadastro_bandeiras WHERE cabecalho_id = %s", (cabecalho_id,))
+            else:
+                cur.execute(f"""
+                    INSERT INTO {schema}.cabecalho_cadastro_bandeiras 
+                    (empresa_codigo, filial_codigo, bandeira_codigo, conta_baixa, portador, tipo_cobranca, cod_mov, tipo_rec, taxa_antecipacao_automatica, taxa_antecipacao_pontual)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;
+                """, (
+                    emp_cod, 
+                    fil_cod, 
+                    band_cod, 
+                    self.conta_sel["codigo"], 
+                    self.portador_sel["codigo"], 
+                    self.tipo_cobranca_sel["codigo"], 
+                    self.cod_mov_sel["codigo"],
+                    self.tipo_rec_sel["codigo"],
+                    tx_auto, 
+                    tx_pontual
+                ))
+                cabecalho_id = cur.fetchone()['id']
+
+            for item in self.itens_parcela:
+                cur.execute(f"""
+                    INSERT INTO {schema}.item_cabecalho_cadastro_bandeiras
+                    (cabecalho_id, parcela_inicial, parcela_final, sinal, dias, taxa)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (cabecalho_id, item['p_ini'], item['p_fim'], item['sinal'], item['dias'], item['taxa']))
+
+            conn.commit()
+            conn.close()
+
+            messagebox.showinfo("Sucesso", "Cadastro e Taxas gravados com sucesso!", parent=self)
+            self.exibir_lista()
+
+        except Exception as err:
+            messagebox.showerror("Erro ao Salvar", f"Falha ao gravar registros no banco:\n{err}", parent=self)
+
+if __name__ == "__main__":
+    try:
+        ctk.set_appearance_mode("Dark")
+        ctk.set_default_color_theme("blue")
+        app = AppCartoesPrincipal()
+        app.mainloop()
+    except Exception as e:
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Erro de Inicialização", f"Ocorreu um erro ao abrir a aplicação:\n\n{traceback.format_exc()}")
