@@ -98,6 +98,10 @@ def centralizar_modal(modal, largura, altura):
     modal.focus_force()
 
 def obter_schema_tabela_existente(conn, cod_empresa, nome_tabela):
+    """
+    Testa se a tabela existe no schema da empresa (ex: xemp_0002).
+    Se nao existir, recorre ao schema de compartilhamento xemp_0001.
+    """
     schema_alvo = f"xemp_{str(cod_empresa).zfill(4)}"
     cur = conn.cursor()
     cur.execute("""
@@ -118,6 +122,7 @@ def criar_tabelas_banco():
     sql_script = f"""
     CREATE SCHEMA IF NOT EXISTS {schema};
 
+    -- TABELA BANDEIRA
     CREATE TABLE IF NOT EXISTS {schema}.bandeiras (
         codigo VARCHAR(10) NOT NULL,
         empresa_codigo VARCHAR(10) NOT NULL,
@@ -127,6 +132,7 @@ def criar_tabelas_banco():
         PRIMARY KEY (empresa_codigo, filial_codigo, codigo)
     );
 
+    -- TABELA CABECALHO CADASTRO BANDEIRAS
     CREATE TABLE IF NOT EXISTS {schema}.cabecalho_cadastro_bandeiras (
         id SERIAL PRIMARY KEY,
         empresa_codigo VARCHAR(10) NOT NULL,
@@ -144,6 +150,7 @@ def criar_tabelas_banco():
     ALTER TABLE {schema}.cabecalho_cadastro_bandeiras ADD COLUMN IF NOT EXISTS cod_mov VARCHAR(50);
     ALTER TABLE {schema}.cabecalho_cadastro_bandeiras ADD COLUMN IF NOT EXISTS tipo_rec VARCHAR(50);
 
+    -- TABELA ITEM CABECALHO CADASTRO BANDEIRAS
     CREATE TABLE IF NOT EXISTS {schema}.item_cabecalho_cadastro_bandeiras (
         id SERIAL PRIMARY KEY,
         cabecalho_id INTEGER REFERENCES {schema}.cabecalho_cadastro_bandeiras(id) ON DELETE CASCADE,
@@ -197,13 +204,13 @@ class LupaEmpresaModal(ctk.CTkToplevel):
             cur = conn.cursor()
             
             if not termo:
-                query = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
-                params = ()
+                query_xgeral = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre ORDER BY fco LIMIT 50;"
+                query_params = ()
             else:
-                query = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fno ILIKE %s ORDER BY fco LIMIT 50;"
-                params = (f"%{termo}%", f"%{termo}%")
+                query_xgeral = "SELECT fco AS codigo, fno AS nome FROM xgeral.geempre WHERE CAST(fco AS TEXT) ILIKE %s OR fno ILIKE %s ORDER BY fco LIMIT 50;"
+                query_params = (f"%{termo}%", f"%{termo}%")
 
-            cur.execute(query, params)
+            cur.execute(query_xgeral, query_params)
             res = cur.fetchall()
             conn.close()
 
@@ -333,23 +340,24 @@ class LupaGenericModal(ctk.CTkToplevel):
             schema_emp = obter_schema_tabela_existente(conn, self.cod_empresa, self.tabela)
             cur = conn.cursor()
             
-            condicoes = []
-            params = []
-
-            if self.filtro_extra:
-                condicoes.append(f"({self.filtro_extra})")
-
-            if termo:
-                condicoes.append(f"(CAST({self.col_cod} AS TEXT) ILIKE %s OR {self.col_desc} ILIKE %s)")
-                params.extend([f"%{termo}%", f"%{termo}%"])
-
             where_clause = ""
-            if condicoes:
-                where_clause = " WHERE " + " AND ".join(condicoes)
+            if self.filtro_extra:
+                where_clause = f" WHERE ({self.filtro_extra}) "
 
-            query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} {where_clause} ORDER BY {self.col_cod} LIMIT 50;"
-
-            cur.execute(query, tuple(params))
+            if not termo:
+                if where_clause:
+                    query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} {where_clause} ORDER BY {self.col_cod} LIMIT 50;"
+                else:
+                    query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} ORDER BY {self.col_cod} LIMIT 50;"
+                params = ()
+            else:
+                if where_clause:
+                    query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} {where_clause} AND (CAST({self.col_cod} AS TEXT) ILIKE %s OR {self.col_desc} ILIKE %s) ORDER BY {self.col_cod} LIMIT 50;"
+                else:
+                    query = f"SELECT {self.col_cod} AS codigo, {self.col_desc} AS descricao FROM {schema_emp}.{self.tabela} WHERE (CAST({self.col_cod} AS TEXT) ILIKE %s OR {self.col_desc} ILIKE %s) ORDER BY {self.col_cod} LIMIT 50;"
+                params = (f"%{termo}%", f"%{termo}%")
+                
+            cur.execute(query, params)
             res = cur.fetchall()
             conn.close()
 
@@ -388,6 +396,7 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
         frame_info.pack(fill="x", padx=15, pady=10)
         ctk.CTkLabel(frame_info, text="Selecione a Empresa e Filial de Destino:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
 
+        # Seleção Empresa
         frame_emp = ctk.CTkFrame(frame_info, fg_color="transparent")
         frame_emp.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(frame_emp, text="Empresa Destino:", width=120, anchor="w").pack(side="left")
@@ -396,6 +405,7 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
         btn_lupa_emp = ctk.CTkButton(frame_emp, text="🔍", width=36, command=self.abrir_lupa_emp)
         btn_lupa_emp.pack(side="left")
 
+        # Seleção Filial
         frame_fil = ctk.CTkFrame(frame_info, fg_color="transparent")
         frame_fil.pack(fill="x", padx=5, pady=5)
         ctk.CTkLabel(frame_fil, text="Filial Destino:", width=120, anchor="w").pack(side="left")
@@ -441,6 +451,7 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
             conn = get_connection()
             cur = conn.cursor()
 
+            # 1. Busca dados do cabeçalho de origem
             cur.execute(f"SELECT * FROM {schema}.cabecalho_cadastro_bandeiras WHERE id = %s", (self.cabecalho_id,))
             cab_origem = cur.fetchone()
 
@@ -448,10 +459,12 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
                 messagebox.showerror("Erro", "Cabeçalho de origem não encontrado!", parent=self)
                 return
 
+            # 2. Busca cadastro da bandeira correspondente de origem
             cur.execute(f"SELECT * FROM {schema}.bandeiras WHERE empresa_codigo=%s AND filial_codigo=%s AND codigo=%s",
                         (cab_origem['empresa_codigo'], cab_origem['filial_codigo'], cab_origem['bandeira_codigo']))
             band_origem = cur.fetchone()
 
+            # 3. Garante/Grava cadastro da bandeira no destino
             if band_origem:
                 cur.execute(f"""
                     INSERT INTO {schema}.bandeiras (codigo, empresa_codigo, filial_codigo, descricao, icone)
@@ -459,6 +472,7 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
                     ON CONFLICT (empresa_codigo, filial_codigo, codigo) DO UPDATE SET descricao = EXCLUDED.descricao
                 """, (band_origem['codigo'], emp_d, fil_d, band_origem['descricao'], band_origem['icone']))
 
+            # 4. Insere novo cabeçalho no destino
             cur.execute(f"""
                 INSERT INTO {schema}.cabecalho_cadastro_bandeiras 
                 (empresa_codigo, filial_codigo, bandeira_codigo, conta_baixa, portador, tipo_cobranca, cod_mov, tipo_rec, taxa_antecipacao_automatica, taxa_antecipacao_pontual)
@@ -477,6 +491,7 @@ class DuplicarBandeiraModal(ctk.CTkToplevel):
             ))
             novo_cab_id = cur.fetchone()['id']
 
+            # 5. Duplica itens (faixas de parcelas)
             cur.execute(f"""
                 INSERT INTO {schema}.item_cabecalho_cadastro_bandeiras (cabecalho_id, parcela_inicial, parcela_final, sinal, dias, taxa)
                 SELECT %s, parcela_inicial, parcela_final, sinal, dias, taxa
@@ -559,6 +574,7 @@ class AppCartoesPrincipal(ctk.CTk):
         self.criar_layout()
 
     def criar_layout(self):
+        # BANNER / TOPO
         frame_top = ctk.CTkFrame(self)
         frame_top.pack(fill="x", padx=15, pady=10)
 
@@ -566,6 +582,7 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_config = ctk.CTkButton(frame_top, text="⚙️ Conf. Banco", fg_color="#455A64", hover_color="#37474F", command=self.abrir_config)
         btn_config.pack(side="right", padx=15)
 
+        # PAINEL EMPRESA E FILIAL
         frame_emp_fil = ctk.CTkFrame(self)
         frame_emp_fil.pack(fill="x", padx=15, pady=5)
 
@@ -581,9 +598,11 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_fil = ctk.CTkButton(frame_emp_fil, text="🔍", width=36, command=self.abrir_lupa_fil)
         btn_lupa_fil.grid(row=0, column=5, padx=2, pady=8)
 
+        # PAINEL PRINCIPAL DE CONTEÚDO (MUDANÇA DE TELAS)
         self.frame_conteudo = ctk.CTkFrame(self)
         self.frame_conteudo.pack(fill="both", expand=True, padx=15, pady=10)
 
+        # 1. TELA DE LISTAGEM DE BANDEIRAS
         self.frame_lista_bandeiras = ctk.CTkFrame(self.frame_conteudo)
         
         frame_header_lista = ctk.CTkFrame(self.frame_lista_bandeiras, fg_color="transparent")
@@ -596,6 +615,7 @@ class AppCartoesPrincipal(ctk.CTk):
         self.scroll_bandeiras = ctk.CTkScrollableFrame(self.frame_lista_bandeiras)
         self.scroll_bandeiras.pack(fill="both", expand=True, padx=10, pady=5)
 
+        # 2. TELA DE FORMULÁRIO DE CADASTRO / EDIÇÃO
         self.frame_form_bandeira = ctk.CTkFrame(self.frame_conteudo)
 
         frame_header_form = ctk.CTkFrame(self.frame_form_bandeira, fg_color="transparent")
@@ -607,9 +627,11 @@ class AppCartoesPrincipal(ctk.CTk):
         self.lbl_titulo_form = ctk.CTkLabel(frame_header_form, text="Cadastro de Bandeira & Taxas", font=ctk.CTkFont(size=15, weight="bold"))
         self.lbl_titulo_form.pack(side="left", padx=15)
 
+        # FORMULÁRIO BANDEIRA E CABEÇALHO
         frame_form = ctk.CTkFrame(self.frame_form_bandeira)
         frame_form.pack(fill="x", padx=10, pady=5)
 
+        # LINHA 0: BANDEIRA
         ctk.CTkLabel(frame_form, text="Cód. Bandeira:").grid(row=0, column=0, padx=8, pady=5, sticky="w")
         self.txt_band_cod = ctk.CTkEntry(frame_form, width=80, placeholder_text="001")
         self.txt_band_cod.grid(row=0, column=1, padx=5, pady=5, sticky="w")
@@ -618,15 +640,20 @@ class AppCartoesPrincipal(ctk.CTk):
         self.txt_band_desc = ctk.CTkEntry(frame_form, width=300, placeholder_text="VISA / MASTERCARD...")
         self.txt_band_desc.grid(row=0, column=3, columnspan=3, padx=5, pady=5, sticky="w")
 
+        # LINHA 1: CONTA BAIXA
         ctk.CTkLabel(frame_form, text="Conta Baixa:").grid(row=1, column=0, padx=8, pady=5, sticky="w")
+        
         frame_conta_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_conta_box.grid(row=1, column=1, columnspan=5, padx=5, pady=5, sticky="w")
+        
         self.txt_conta = ctk.CTkEntry(frame_conta_box, width=450, placeholder_text="Selecione na Lupa...")
         self.txt_conta.pack(side="left", padx=(0, 5))
         btn_lupa_conta = ctk.CTkButton(frame_conta_box, text="🔍", width=36, command=self.abrir_lupa_conta)
         btn_lupa_conta.pack(side="left")
 
+        # LINHA 2: PORTADOR E TIPO COBRANÇA
         ctk.CTkLabel(frame_form, text="Portador:").grid(row=2, column=0, padx=8, pady=5, sticky="w")
+        
         frame_port_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_port_box.grid(row=2, column=1, padx=5, pady=5, sticky="w")
         self.txt_portador = ctk.CTkEntry(frame_port_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -635,6 +662,7 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_port.pack(side="left")
 
         ctk.CTkLabel(frame_form, text="Tipo Cobrança:").grid(row=2, column=2, padx=8, pady=5, sticky="w")
+        
         frame_cobr_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_cobr_box.grid(row=2, column=3, columnspan=3, padx=5, pady=5, sticky="w")
         self.txt_tipo_cobranca = ctk.CTkEntry(frame_cobr_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -642,7 +670,9 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_cobr = ctk.CTkButton(frame_cobr_box, text="🔍", width=36, command=self.abrir_lupa_tipo_cobranca)
         btn_lupa_cobr.pack(side="left")
 
+        # LINHA 3: COD. MOV BAIXA E TIPO REC. BAIXA
         ctk.CTkLabel(frame_form, text="Cod. Mov Baixa:").grid(row=3, column=0, padx=8, pady=5, sticky="w")
+        
         frame_mov_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_mov_box.grid(row=3, column=1, padx=5, pady=5, sticky="w")
         self.txt_cod_mov = ctk.CTkEntry(frame_mov_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -651,6 +681,7 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_mov.pack(side="left")
 
         ctk.CTkLabel(frame_form, text="Tipo Rec.baixa:").grid(row=3, column=2, padx=8, pady=5, sticky="w")
+        
         frame_rec_box = ctk.CTkFrame(frame_form, fg_color="transparent")
         frame_rec_box.grid(row=3, column=3, columnspan=3, padx=5, pady=5, sticky="w")
         self.txt_tipo_rec = ctk.CTkEntry(frame_rec_box, width=220, placeholder_text="Selecione na Lupa...")
@@ -658,6 +689,7 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_lupa_rec = ctk.CTkButton(frame_rec_box, text="🔍", width=36, command=self.abrir_lupa_tipo_rec)
         btn_lupa_rec.pack(side="left")
 
+        # LINHA 4: TAXAS DE ANTECIPAÇÃO
         ctk.CTkLabel(frame_form, text="% Antecip. Auto:").grid(row=4, column=0, padx=8, pady=5, sticky="w")
         self.txt_tx_auto = ctk.CTkEntry(frame_form, width=100, placeholder_text="0.00")
         self.txt_tx_auto.grid(row=4, column=1, padx=5, pady=5, sticky="w")
@@ -666,6 +698,7 @@ class AppCartoesPrincipal(ctk.CTk):
         self.txt_tx_pontual = ctk.CTkEntry(frame_form, width=100, placeholder_text="0.00")
         self.txt_tx_pontual.grid(row=4, column=3, padx=5, pady=5, sticky="w")
 
+        # FORMULÁRIO ITEM DA TAXA (PARCELAS)
         frame_item = ctk.CTkFrame(self.frame_form_bandeira)
         frame_item.pack(fill="x", padx=10, pady=5)
 
@@ -692,9 +725,11 @@ class AppCartoesPrincipal(ctk.CTk):
         btn_add_item = ctk.CTkButton(frame_item, text="➕ Add Faixa", width=90, fg_color="#1976D2", hover_color="#0D47A1", command=self.adicionar_item_parcela)
         btn_add_item.grid(row=0, column=10, padx=8, pady=5)
 
+        # TABELA DE PARCELAS/TAXAS
         self.frame_grid = ctk.CTkScrollableFrame(self.frame_form_bandeira, height=180)
         self.frame_grid.pack(fill="both", expand=True, padx=10, pady=5)
 
+        # BOTÃO SALVAR
         frame_bot = ctk.CTkFrame(self.frame_form_bandeira, fg_color="transparent")
         frame_bot.pack(fill="x", padx=10, pady=10)
 
@@ -805,6 +840,7 @@ class AppCartoesPrincipal(ctk.CTk):
         try:
             conn = get_connection()
 
+            # Descobre schemas corretos das tabelas auxiliares (com fallback para xemp_0001)
             schema_bcconta = obter_schema_tabela_existente(conn, emp_cod, "bcconta")
             schema_rpport = obter_schema_tabela_existente(conn, emp_cod, "rpport")
             schema_rpcobr = obter_schema_tabela_existente(conn, emp_cod, "rpcobr")
@@ -813,6 +849,7 @@ class AppCartoesPrincipal(ctk.CTk):
 
             cur = conn.cursor()
 
+            # 1. Carrega Cabeçalho
             cur.execute(f"SELECT * FROM {schema}.cabecalho_cadastro_bandeiras WHERE id = %s", (cabecalho_id,))
             cab = cur.fetchone()
 
@@ -824,6 +861,7 @@ class AppCartoesPrincipal(ctk.CTk):
             self.limpar_formulario()
             self.lbl_titulo_form.configure(text=f"Editando Bandeira [{cab['bandeira_codigo']}]")
 
+            # 2. Carrega Descrição da Bandeira
             cur.execute(f"SELECT descricao FROM {schema}.bandeiras WHERE empresa_codigo=%s AND filial_codigo=%s AND codigo=%s", 
                         (cab['empresa_codigo'], cab['filial_codigo'], cab['bandeira_codigo']))
             b_info = cur.fetchone()
@@ -834,6 +872,7 @@ class AppCartoesPrincipal(ctk.CTk):
             self.txt_tx_auto.insert(0, str(cab['taxa_antecipacao_automatica'] or 0.0))
             self.txt_tx_pontual.insert(0, str(cab['taxa_antecipacao_pontual'] or 0.0))
 
+            # 3. Descrições das tabelas auxiliares tratando compartilhamento
             if cab.get('conta_baixa'):
                 cur.execute(f"SELECT fno AS desc FROM {schema_bcconta}.bcconta WHERE fco = %s", (cab['conta_baixa'],))
                 r = cur.fetchone()
@@ -854,10 +893,9 @@ class AppCartoesPrincipal(ctk.CTk):
 
             if cab.get('cod_mov'):
                 cur.execute(
-                    f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov "
-                    f"WHERE fcodigo = %s AND fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C' "
-                    f"AND (fdescricao ILIKE %s OR fdescricao ILIKE %s)", 
-                    (cab['cod_mov'], '%cartao%', '%cartão%')
+                f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov "
+                f"WHERE fcodigo = %s AND fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C'", 
+                (cab['cod_mov'],)
                 )
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
@@ -869,6 +907,7 @@ class AppCartoesPrincipal(ctk.CTk):
                 desc = r['desc'] if r else ""
                 self.set_tipo_rec(cab['tipo_rec'], desc)
 
+            # 4. Carrega Itens
             cur.execute(f"SELECT * FROM {schema}.item_cabecalho_cadastro_bandeiras WHERE cabecalho_id = %s ORDER BY parcela_inicial", (cabecalho_id,))
             itens = cur.fetchall()
             for it in itens:
@@ -965,21 +1004,7 @@ class AppCartoesPrincipal(ctk.CTk):
         if not self.empresa_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
             return
-        
-        filtro = (
-            "fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C' "
-            "AND (fdescricao ILIKE '%cartao%' OR fdescricao ILIKE '%cartão%')"
-        )
-        LupaGenericModal(
-            self, 
-            cod_empresa=self.empresa_sel["codigo"], 
-            titulo="Cod. Mov Baixa (bccmov)", 
-            tabela="bccmov", 
-            col_cod="fcodigo", 
-            col_desc="fdescricao", 
-            callback=self.set_cod_mov, 
-            filtro_extra=filtro
-        )
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Cod. Mov Baixa (bccmov)", tabela="bccmov", col_cod="fcodigo", col_desc="fdescricao", callback=self.set_cod_mov, filtro_extra="fanalitica='S'")
 
     def set_cod_mov(self, cod, desc):
         self.cod_mov_sel = {"codigo": cod, "nome": desc}
@@ -1047,6 +1072,7 @@ class AppCartoesPrincipal(ctk.CTk):
             conn = get_connection()
             cur = conn.cursor()
 
+            # 1. Salva/Atualiza Bandeira
             cur.execute(f"""
                 INSERT INTO {schema}.bandeiras (codigo, empresa_codigo, filial_codigo, descricao)
                 VALUES (%s, %s, %s, %s)
@@ -1057,6 +1083,7 @@ class AppCartoesPrincipal(ctk.CTk):
             tx_pontual = float(self.txt_tx_pontual.get().strip().replace(',', '.') or 0)
 
             if self.editando_id:
+                # Atualização do Cabeçalho
                 cur.execute(f"""
                     UPDATE {schema}.cabecalho_cadastro_bandeiras 
                     SET bandeira_codigo = %s, conta_baixa = %s, portador = %s, tipo_cobranca = %s,
@@ -1067,8 +1094,10 @@ class AppCartoesPrincipal(ctk.CTk):
                       self.cod_mov_sel["codigo"], self.tipo_rec_sel["codigo"], tx_auto, tx_pontual, self.editando_id))
 
                 cabecalho_id = self.editando_id
+                # Apaga os itens antigos para reinsertar
                 cur.execute(f"DELETE FROM {schema}.item_cabecalho_cadastro_bandeiras WHERE cabecalho_id = %s", (cabecalho_id,))
             else:
+                # Inserção de novo Cabeçalho
                 cur.execute(f"""
                     INSERT INTO {schema}.cabecalho_cadastro_bandeiras 
                     (empresa_codigo, filial_codigo, bandeira_codigo, conta_baixa, portador, tipo_cobranca, cod_mov, tipo_rec, taxa_antecipacao_automatica, taxa_antecipacao_pontual)
@@ -1087,6 +1116,7 @@ class AppCartoesPrincipal(ctk.CTk):
                 ))
                 cabecalho_id = cur.fetchone()['id']
 
+            # 3. Salva Itens das Parcelas
             for item in self.itens_parcela:
                 cur.execute(f"""
                     INSERT INTO {schema}.item_cabecalho_cadastro_bandeiras
