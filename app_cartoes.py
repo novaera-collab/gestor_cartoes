@@ -1015,7 +1015,7 @@ class AppCartoesPrincipal(ctk.CTk):
         if not self.empresa_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
             return
-        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Tipo Rec.baixa (rptiprp)", tabela="rptiprp", col_cod="fcodigo", col_desc="fdescricao", callback=self.set_tipo_rec, filtro_extra="fregativo='S' AND fbaixarp IN ('D','S','R') AND ftipoforma IN ('3','4')")
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Tipo Rec.baixa (rptiprp)", tabela="rptiprp", col_cod="fcodigo", col_desc="fdescricao", callback=self.set_tipo_rec, filtro_extra="fregativo='S' AND fbaixarp IN ('S','R') AND ftipoforma IN ('D','3','4')")
 
     def set_tipo_rec(self, cod, desc):
         self.tipo_rec_sel = {"codigo": cod, "nome": desc}
