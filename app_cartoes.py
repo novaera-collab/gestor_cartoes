@@ -747,6 +747,25 @@ class AppCartoesPrincipal(ctk.CTk):
         self.frame_lista_bandeiras.pack_forget()
         self.frame_form_bandeira.pack(fill="both", expand=True)
 
+    def obter_proximo_codigo_bandeira(self):
+        schema = get_schema()
+        emp_cod = self.empresa_sel["codigo"]
+        fil_cod = self.filial_sel["codigo"]
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(f"""
+                SELECT MAX(CAST(NULLIF(regexp_replace(codigo, '[^0-9]', '', 'g'), '') AS INTEGER)) AS max_cod
+                FROM {schema}.bandeiras
+                WHERE empresa_codigo = %s AND filial_codigo = %s
+            """, (emp_cod, fil_cod))
+            res = cur.fetchone()
+            conn.close()
+            proximo = (res['max_cod'] or 0) + 1
+            return str(proximo).zfill(3)
+        except Exception:
+            return "001"
+
     def nova_bandeira(self):
         if not self.empresa_sel["codigo"] or not self.filial_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione a Empresa e a Filial primeiro!", parent=self)
@@ -755,6 +774,10 @@ class AppCartoesPrincipal(ctk.CTk):
         self.editando_id = None
         self.lbl_titulo_form.configure(text="Cadastro de Nova Bandeira & Taxas")
         self.limpar_formulario()
+        
+        prox_cod = self.obter_proximo_codigo_bandeira()
+        self.txt_band_cod.insert(0, prox_cod)
+        
         self.exibir_formulario()
 
     def limpar_formulario(self):
@@ -872,37 +895,37 @@ class AppCartoesPrincipal(ctk.CTk):
             self.txt_tx_auto.insert(0, str(cab['taxa_antecipacao_automatica'] or 0.0))
             self.txt_tx_pontual.insert(0, str(cab['taxa_antecipacao_pontual'] or 0.0))
 
-            # 3. Descrições das tabelas auxiliares tratando compartilhamento
+            # 3. Descrições das tabelas auxiliares tratando compartilhamento (apenas ativos fregativo = 'S')
             if cab.get('conta_baixa'):
-                cur.execute(f"SELECT fno AS desc FROM {schema_bcconta}.bcconta WHERE fco = %s", (cab['conta_baixa'],))
+                cur.execute(f"SELECT fno AS desc FROM {schema_bcconta}.bcconta WHERE fco = %s AND fregativo = 'S'", (cab['conta_baixa'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_conta(cab['conta_baixa'], desc)
 
             if cab.get('portador'):
-                cur.execute(f"SELECT fde AS desc FROM {schema_rpport}.rpport WHERE fco = %s", (cab['portador'],))
+                cur.execute(f"SELECT fde AS desc FROM {schema_rpport}.rpport WHERE fco = %s AND fregativo = 'S'", (cab['portador'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_portador(cab['portador'], desc)
 
             if cab.get('tipo_cobranca'):
-                cur.execute(f"SELECT fde AS desc FROM {schema_rpcobr}.rpcobr WHERE fco = %s", (cab['tipo_cobranca'],))
+                cur.execute(f"SELECT fde AS desc FROM {schema_rpcobr}.rpcobr WHERE fco = %s AND fregativo = 'S'", (cab['tipo_cobranca'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_tipo_cobranca(cab['tipo_cobranca'], desc)
 
             if cab.get('cod_mov'):
                 cur.execute(
-                f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov "
-                f"WHERE fcodigo = %s AND fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C'", 
-                (cab['cod_mov'],)
+                    f"SELECT fdescricao AS desc FROM {schema_bccmov}.bccmov "
+                    f"WHERE fcodigo = %s AND fanalitica = 'S' AND flanrecpag = 'S' AND fregativo = 'S' AND fnatureza = 'C'", 
+                    (cab['cod_mov'],)
                 )
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_cod_mov(cab['cod_mov'], desc)
 
             if cab.get('tipo_rec'):
-                cur.execute(f"SELECT fdescricao AS desc FROM {schema_rptiprp}.rptiprp WHERE fcodigo = %s", (cab['tipo_rec'],))
+                cur.execute(f"SELECT fdescricao AS desc FROM {schema_rptiprp}.rptiprp WHERE fcodigo = %s AND fregativo = 'S'", (cab['tipo_rec'],))
                 r = cur.fetchone()
                 desc = r['desc'] if r else ""
                 self.set_tipo_rec(cab['tipo_rec'], desc)
@@ -971,7 +994,7 @@ class AppCartoesPrincipal(ctk.CTk):
         if not self.empresa_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
             return
-        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Conta para Baixa (bcconta)", tabela="bcconta", col_cod="fco", col_desc="fno", callback=self.set_conta)
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Conta para Baixa (bcconta)", tabela="bcconta", col_cod="fco", col_desc="fno", callback=self.set_conta, filtro_extra="fregativo='S'")
 
     def set_conta(self, cod, desc):
         self.conta_sel = {"codigo": cod, "nome": desc}
@@ -982,7 +1005,7 @@ class AppCartoesPrincipal(ctk.CTk):
         if not self.empresa_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
             return
-        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Portador (rpport)", tabela="rpport", col_cod="fco", col_desc="fde", callback=self.set_portador)
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Portador (rpport)", tabela="rpport", col_cod="fco", col_desc="fde", callback=self.set_portador, filtro_extra="fregativo='S'")
 
     def set_portador(self, cod, desc):
         self.portador_sel = {"codigo": cod, "nome": desc}
@@ -993,7 +1016,7 @@ class AppCartoesPrincipal(ctk.CTk):
         if not self.empresa_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
             return
-        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Tipo de Cobrança (rpcobr)", tabela="rpcobr", col_cod="fco", col_desc="fde", callback=self.set_tipo_cobranca)
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Tipo de Cobrança (rpcobr)", tabela="rpcobr", col_cod="fco", col_desc="fde", callback=self.set_tipo_cobranca, filtro_extra="fregativo='S'")
 
     def set_tipo_cobranca(self, cod, desc):
         self.tipo_cobranca_sel = {"codigo": cod, "nome": desc}
@@ -1004,7 +1027,7 @@ class AppCartoesPrincipal(ctk.CTk):
         if not self.empresa_sel["codigo"]:
             messagebox.showwarning("Atenção", "Selecione uma Empresa primeiro!", parent=self)
             return
-        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Cod. Mov Baixa (bccmov)", tabela="bccmov", col_cod="fcodigo", col_desc="fdescricao", callback=self.set_cod_mov, filtro_extra="fanalitica='S'")
+        LupaGenericModal(self, cod_empresa=self.empresa_sel["codigo"], titulo="Cod. Mov Baixa (bccmov)", tabela="bccmov", col_cod="fcodigo", col_desc="fdescricao", callback=self.set_cod_mov, filtro_extra="fanalitica='S' AND fregativo='S'")
 
     def set_cod_mov(self, cod, desc):
         self.cod_mov_sel = {"codigo": cod, "nome": desc}
